@@ -1,3 +1,20 @@
+# This was forked from https://github.com/StefanoPicozzi/cotd2
+#
+# The pipeline was modified to use the different OpenShift Jenkins syntax
+#
+# Reference for the original OpenShift Jenkins syntax
+#
+# https://raw.githubusercontent.com/devops-with-openshift/pipeline-configs/master
+#
+# Reference for example OpenShift Jenkins pipeline
+#
+# https://github.com/openshift/origin/tree/master/examples/jenkins/pipeline
+#
+# Reference for OpenShift Jenkins client plug-in
+#
+# https://github.com/openshift/jenkins-client-plugin/blob/master/README.md
+#
+# See the SETUP file for instructions on how to setup everything in OpenShift
 
 # COTD: Cat of the Day
 

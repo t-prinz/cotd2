@@ -1,0 +1,50 @@
+oc login -u user1 https://api.cluster-0034.0034.example.opentlc.com:6443
+
+oc new-project cicd --display-name='CICD Jenkins' --description='CICD Jenkins' 
+oc new-project development --display-name='Development' --description='Development'
+oc new-project testing --display-name='Testing' --description='Testing'
+oc new-project production --display-name='Production' --description='Production'
+
+oc new-app --template=jenkins-ephemeral -p MEMORY_LIMIT=2048Mi -n cicd
+
+oc policy add-role-to-user edit system:serviceaccount:cicd:jenkins -n development
+oc policy add-role-to-user edit system:serviceaccount:cicd:jenkins -n testing
+oc policy add-role-to-user edit system:serviceaccount:cicd:jenkins -n production
+
+oc policy add-role-to-group system:image-puller system:serviceaccounts:testing -n development
+oc policy add-role-to-group system:image-puller system:serviceaccounts:production -n development
+
+#curl https://raw.githubusercontent.com/devops-with-openshift/pipeline-configs/master/empty-pipeline.yaml > empty-pipeline.yaml
+#curl https://raw.githubusercontent.com/devops-with-openshift/pipeline-configs/master/pipeline-groovy.groovy > pipeline-groovy.groovy
+#curl https://raw.githubusercontent.com/devops-with-openshift/pipeline-configs/master/pipeline.yaml > pipeline.yaml
+
+oc create -n cicd -f pipeline.yaml
+
+oc project development
+oc new-app --name=myapp openshift/php:latest~https://github.com/t-prinz/cotd2.git#master -n development
+oc expose service myapp
+
+devimage=`oc get is myapp -o yaml -n development | grep dockerImageRepository | awk -F ": " '{print $2}'`
+testimage=${devimage}:promoteQA
+prodimage="${devimage}:promotePRD"
+
+oc project testing
+oc create dc myapp --image=${testimage}
+oc patch dc/myapp -p '{"spec":{"template":{"spec":{"containers":[{"name":"default-container","imagePullPolicy":"Always"}]}}}}'
+oc expose dc/myapp --port=8080,8443
+oc expose svc/myapp
+oc rollout cancel dc myapp
+
+oc project production
+oc create dc myapp --image=${prodimage}
+oc patch dc/myapp -p '{"spec":{"template":{"spec":{"containers":[{"name":"default-container","imagePullPolicy":"Always"}]}}}}'
+oc expose dc/myapp --port=8080,8443
+oc expose svc/myapp
+oc rollout cancel dc myapp
+
+
+oc tag development/myapp:latest development/myapp:promoteQA
+oc rollout latest  myapp -n testing
+
+oc tag development/myapp:latest development/myapp:promotePRD
+oc rollout latest  myapp -n production

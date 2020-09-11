@@ -1,0 +1,197 @@
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  creationTimestamp: "2020-09-11T02:01:46Z"
+  labels:
+    app: pipeline
+    name: pipeline
+  managedFields:
+  - apiVersion: build.openshift.io/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:metadata:
+        f:labels:
+          .: {}
+          f:app: {}
+          f:name: {}
+      f:spec:
+        f:failedBuildsHistoryLimit: {}
+        f:nodeSelector: {}
+        f:runPolicy: {}
+        f:source:
+          f:type: {}
+        f:strategy:
+          f:jenkinsPipelineStrategy: {}
+          f:type: {}
+        f:successfulBuildsHistoryLimit: {}
+        f:triggers: {}
+    manager: oc
+    operation: Update
+    time: "2020-09-11T02:01:46Z"
+  - apiVersion: build.openshift.io/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:spec:
+        f:strategy:
+          f:jenkinsPipelineStrategy:
+            f:jenkinsfile: {}
+    manager: Mozilla
+    operation: Update
+    time: "2020-09-11T03:41:54Z"
+  - apiVersion: build.openshift.io/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:status:
+        f:lastVersion: {}
+    manager: openshift-apiserver
+    operation: Update
+    time: "2020-09-11T03:41:59Z"
+  name: pipeline
+  namespace: cicd
+  resourceVersion: "249220"
+  selfLink: /apis/build.openshift.io/v1/namespaces/cicd/buildconfigs/pipeline
+  uid: 4f5c3542-5440-4a68-ba3f-38f007a01b98
+spec:
+  failedBuildsHistoryLimit: 5
+  nodeSelector: {}
+  output: {}
+  postCommit: {}
+  resources: {}
+  runPolicy: Serial
+  source:
+    type: None
+  strategy:
+    jenkinsPipelineStrategy:
+      jenkinsfile: |-
+        #!groovy
+        pipeline {
+          agent {
+            node {
+              label 'maven'
+            }
+          }
+          options {
+            timeout(time: 20, unit: 'MINUTES')
+          }
+
+          stages {
+            stage('preamble') {
+              steps {
+                script {
+                  openshift.withCluster() {
+                    openshift.withProject() {
+                      echo "Using project: ${openshift.project()}"
+                    }
+                  }
+                } // script
+              } // steps
+            } // stage
+            stage('build in development') {
+              steps {
+                script {
+                  openshift.withCluster() {
+                    openshift.withProject("development") {
+                      echo "Building in project: ${openshift.project()}"
+                      def bc = openshift.selector('bc', "myapp")
+                      bc.startBuild()
+                      def builds = bc.related('builds')
+                      builds.untilEach(1) {
+                        return (it.object().status.phase == "Complete")
+                      }
+                    }
+                  }
+                } // script
+              } // steps
+            } // stage
+            stage('verify deploy in dev') {
+              steps {
+                script {
+                  openshift.withCluster() {
+                    openshift.withProject("development") {
+                      echo "Verifying deployment in project: ${openshift.project()}"
+                      def dc = openshift.selector('dc', "myapp")
+                      dc.rollout().status()
+                    }
+                  }
+                } // script
+              } // steps
+            } // stage
+            stage('deploy in test') {
+              steps {
+                script {
+                  openshift.withCluster() {
+                    openshift.withProject("development") {
+                      echo "Tagging image for promotion to testing via project: ${openshift.project()}"
+                      openshift.tag( 'development/myapp:latest', 'development/myapp:promoteQAA')
+                    }
+                  }
+                } // script
+                script {
+                  openshift.withCluster() {
+                    openshift.withProject("testing") {
+                      echo "Rolling out latest deployment in project: ${openshift.project()}"
+                      openshift.selector("dc", "myapp").rollout().latest()
+                    }
+                  }
+                } // script
+              } // steps
+            } // stage
+            stage('verify deploy in test') {
+              steps {
+                script {
+                  openshift.withCluster() {
+                    openshift.withProject("testing") {
+                      echo "Verifying deployment in project: ${openshift.project()}"
+                      def dc = openshift.selector('dc', "myapp")
+                      dc.rollout().status()
+                    }
+                  }
+                } // script
+              } // steps
+            } // stage
+            stage('Deploy to production') {
+              steps {
+                script {
+                  openshift.withCluster() {
+                    openshift.withProject("development") {
+                      echo "Tagging image for promotion to production via project: ${openshift.project()}"
+                      openshift.tag( 'development/myapp:latest', 'development/myapp:promotePRDD')
+                    }
+                  }
+                } // script
+                script {
+                  openshift.withCluster() {
+                    openshift.withProject("production") {
+                      echo "Rolling out latest deployment in project: ${openshift.project()}"
+                      openshift.selector("dc", "myapp").rollout().latest()
+                    }
+                  }
+                } // script
+              } // steps
+            } // stage
+            stage('verify deploy in production') {
+              steps {
+                script {
+                  openshift.withCluster() {
+                    openshift.withProject("production") {
+                      echo "Verifying deployment in project: ${openshift.project()}"
+                      def dc = openshift.selector('dc', "myapp")
+                      dc.rollout().status()
+                    }
+                  }
+                } // script
+              } // steps
+            } // stage
+          }
+        }
+    type: JenkinsPipeline
+  successfulBuildsHistoryLimit: 5
+  triggers:
+  - github:
+      secret: secret101
+    type: GitHub
+  - generic:
+      secret: secret101
+    type: Generic
+status:
+  lastVersion: 12
